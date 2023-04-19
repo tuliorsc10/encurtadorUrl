@@ -1,22 +1,21 @@
 package tulio.costa.encurtadorUrl.service;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import tulio.costa.encurtadorUrl.domain.dto.UrlOriginal;
-import tulio.costa.encurtadorUrl.domain.dto.UrlsDto;
 import tulio.costa.encurtadorUrl.domain.entity.Urls;
 import tulio.costa.encurtadorUrl.exception.AppError;
 import tulio.costa.encurtadorUrl.repository.UrlsRepository;
 
+import java.sql.Timestamp;
 import java.text.DateFormat;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
-import java.util.Date;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.Temporal;
 import java.util.Optional;
 
 
@@ -28,25 +27,44 @@ public class UrlsService {
     private final UrlsRepository urlsRepository;
 
 
-    public Urls getUrls(UrlsDto urlCurta) {
-        Optional<Urls> getObjetoUrl = urlsRepository.findByUrlEncurtada(urlCurta.getNomeUrlEncurtada());
+    public String getUrls(String urlCurta) throws ParseException {
+        Optional<Urls> getObjetoUrl = urlsRepository.findByUrlEncurtada(enderecoLocal.concat(urlCurta));
 
         if(getObjetoUrl.isEmpty()) {
-            throw new AppError(HttpStatus.BAD_REQUEST, "Url não encontrada!");
+            throw new AppError(HttpStatus.NOT_FOUND, "Url não encontrada!");
         }
-        return getObjetoUrl.get();
+
+        long duracao = ChronoUnit.DAYS.between(LocalDateTime.parse(getObjetoUrl.get().getData()), LocalDateTime.now());
+
+        if(duracao >= 2) {
+            throw new AppError(HttpStatus.BAD_REQUEST, "Link Expirado");
+        }
+        return getObjetoUrl.get().getUrlsOriginal();
     }
 
     public Urls geradorUrl(UrlOriginal url) {
         if(!url.getUrlOriginal().startsWith("http") || !url.getUrlOriginal().startsWith("https")) {
             throw new AppError(HttpStatus.BAD_REQUEST, "Insira uma Url válida");
         }
-        DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("yyyymmddhhmmss");
+        DateTimeFormatter segundo = DateTimeFormatter.ofPattern("ss");
+        Optional<Urls> getObjetoUrl = urlsRepository.findByUrlEncurtada(enderecoLocal.concat(logicaEncurtador(url)));
 
+        StringBuilder resultadoLogica = new StringBuilder();
+        if(!getObjetoUrl.isEmpty()){
+            String resultado = logicaEncurtador(url);
+            resultadoLogica.append(logicaEncurtador(url)
+                    .replace(resultado.substring(
+                            resultado.length() -2, resultado.length()),
+                            LocalDateTime.now().format(segundo)
+                    )
+            );
+        } else {
+            resultadoLogica.append(logicaEncurtador(url));
+        }
         return urlsRepository.save(Urls.builder()
                 .urlsOriginal(url.getUrlOriginal())
-                .urlEncurtada(enderecoLocal.concat(logicaEncurtador(url)))
-                .data(LocalDateTime.now().format(dateTimeFormatter))
+                .urlEncurtada(enderecoLocal.concat(resultadoLogica.toString()))
+                .data(LocalDateTime.now().toString())
                 .build());
     }
 
